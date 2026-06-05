@@ -1,0 +1,48 @@
+{
+  "name": "sacco-electron",
+  "version": "1.0.0",
+  "description": "SACCO Management System - Modern Desktop App",
+  "main": "main.js",
+  "author": "SACCO Pro",
+  "scripts": {
+    "start": "electron .",
+    "setup-db": "node setup-db.js",
+    "build": "electron-builder --win --config.win.sign=false"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "mysql2": "^3.9.7"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.sacco.pro",
+    "productName": "SACCO Pro",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "node_modules/**/*",
+      "!node_modules/electron/**/*",
+      "!node_modules/electron-builder/**/*"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "sign": false,
+      "signingHashAlgorithms": null
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

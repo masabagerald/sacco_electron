@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+out/
+
+# Environment variables (contains secrets)
+.env
+*.env.local
+
+# Debug files
+_debug_main.js
+*.log
+npm-debug.log*
+
+# Electron-builder cache
+.cache/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor directories
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# SQLite databases (if used locally)
+*.db
+*.sqlite
+*.sqlite3

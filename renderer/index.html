@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data:">
+  <title>SACCO Pro</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="css/app.css">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: { colors: {
+        primary: { DEFAULT: '#1e3a5f', light: '#2563eb' },
+        sacco:   { DEFAULT: '#1e3a5f' }
+      }}}
+    }
+  </script>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-100 h-screen flex overflow-hidden">
+
+  <!-- Sidebar -->
+  <aside id="sidebar" class="sidebar">
+    <div class="logo-area">
+      <div class="logo-icon">S</div>
+      <span class="logo-text">SACCO Pro</span>
+    </div>
+    <nav class="nav-links">
+      <a class="nav-link active" data-page="dashboard">
+        <i class="fa-solid fa-gauge-high"></i><span>Dashboard</span>
+      </a>
+      <a class="nav-link" data-page="members">
+        <i class="fa-solid fa-users"></i><span>Members</span>
+      </a>
+      <a class="nav-link" data-page="savings">
+        <i class="fa-solid fa-piggy-bank"></i><span>Savings</span>
+      </a>
+      <a class="nav-link" data-page="loans">
+        <i class="fa-solid fa-hand-holding-dollar"></i>
+        <span>Loans</span>
+        <span id="pending-badge" class="badge hidden">0</span>
+      </a>
+      <a class="nav-link" data-page="calculator">
+        <i class="fa-solid fa-calculator"></i><span>Calculator</span>
+      </a>
+      <a class="nav-link" data-page="reports">
+        <i class="fa-solid fa-chart-bar"></i><span>Reports</span>
+      </a>
+      <a class="nav-link" data-page="activity">
+        <i class="fa-solid fa-clock-rotate-left"></i><span>Activity Log</span>
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <button id="theme-btn" title="Toggle dark mode">
+        <i class="fa-solid fa-moon"></i>
+      </button>
+      <span class="version-text">v1.0.0</span>
+    </div>
+  </aside>
+
+  <!-- Main area -->
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <!-- Topbar -->
+    <header class="topbar">
+      <h1 id="page-title" class="text-xl font-bold text-gray-700 dark:text-gray-100">Dashboard</h1>
+      <div class="flex items-center gap-4">
+        <span id="overdue-alert" class="hidden alert-chip">
+          <i class="fa-solid fa-triangle-exclamation"></i> <span id="overdue-count">0</span> Overdue Loan(s)
+        </span>
+        <span class="text-sm text-gray-500 dark:text-gray-400" id="date-display"></span>
+      </div>
+    </header>
+
+    <!-- Page content -->
+    <main id="content" class="flex-1 overflow-auto p-6"></main>
+  </div>
+
+  <!-- Modal -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div id="modal-box" class="modal-box">
+      <div class="modal-header">
+        <h2 id="modal-title" class="text-lg font-bold"></h2>
+        <button id="modal-close" class="modal-close-btn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
