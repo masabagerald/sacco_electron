@@ -953,8 +953,114 @@ const Activity = {
   },
 };
 
+// ── Settings / DB Connection Page ────────────────────────────
+const Settings = {
+  async render() {
+    const cfg = await api.getConfig();
+    return `
+    <div class="section-card" style="max-width:520px;margin:0 auto">
+      <div class="page-header"><h2>Database Connection</h2></div>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mb-5">
+        Configure the MySQL connection. Changes take effect immediately after saving.
+      </p>
+      <form id="db-cfg-form" autocomplete="off">
+        <div class="form-group">
+          <label class="form-label">Host</label>
+          <input class="form-input" id="cfg-host" value="${cfg.host}" placeholder="localhost">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Port <span class="text-gray-400 font-normal">(optional)</span></label>
+          <input class="form-input" id="cfg-port" value="${cfg.port || ''}" placeholder="3306">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input class="form-input" id="cfg-user" value="${cfg.user}" placeholder="root">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <div style="position:relative">
+            <input class="form-input" id="cfg-password" type="password"
+                   value="${cfg.password}" placeholder="Leave blank if none" style="padding-right:2.5rem">
+            <button type="button" id="cfg-toggle-pw"
+                    style="position:absolute;right:.6rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#9ca3af">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Database Name</label>
+          <input class="form-input" id="cfg-db" value="${cfg.database}" placeholder="sacco_db">
+        </div>
+
+        <div id="cfg-status" class="hidden text-sm rounded px-3 py-2 mb-4"></div>
+
+        <div class="flex gap-3 flex-wrap">
+          <button type="button" id="btn-test-cfg" class="btn btn-ghost">
+            <i class="fa-solid fa-plug-circle-check"></i> Test Connection
+          </button>
+          <button type="submit" class="btn btn-primary">
+            <i class="fa-solid fa-floppy-disk"></i> Save &amp; Connect
+          </button>
+        </div>
+      </form>
+    </div>`;
+  },
+
+  async mount() {
+    document.getElementById('cfg-toggle-pw').onclick = () => {
+      const inp = document.getElementById('cfg-password');
+      const ico = document.querySelector('#cfg-toggle-pw i');
+      const show = inp.type === 'password';
+      inp.type = show ? 'text' : 'password';
+      ico.className = show ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye';
+    };
+
+    document.getElementById('btn-test-cfg').onclick = async () => {
+      this._setStatus('info', '<i class="fa-solid fa-spinner fa-spin"></i> Testing…');
+      const result = await api.testConfig(this._vals());
+      result.success
+        ? this._setStatus('success', '<i class="fa-solid fa-circle-check"></i> Connection successful')
+        : this._setStatus('error', `<i class="fa-solid fa-circle-xmark"></i> ${result.error}`);
+    };
+
+    document.getElementById('db-cfg-form').onsubmit = async e => {
+      e.preventDefault();
+      this._setStatus('info', '<i class="fa-solid fa-spinner fa-spin"></i> Connecting…');
+      const result = await api.applyConfig(this._vals());
+      if (result.success) {
+        this._setStatus('success', '<i class="fa-solid fa-circle-check"></i> Connected and database ready');
+        toast('Database connected successfully', 'success');
+      } else {
+        this._setStatus('error', `<i class="fa-solid fa-circle-xmark"></i> ${result.error}`);
+        toast('Connection failed', 'error');
+      }
+    };
+  },
+
+  _vals() {
+    return {
+      host:     document.getElementById('cfg-host').value.trim()     || 'localhost',
+      port:     document.getElementById('cfg-port').value.trim()     || '',
+      user:     document.getElementById('cfg-user').value.trim()     || 'root',
+      password: document.getElementById('cfg-password').value,
+      database: document.getElementById('cfg-db').value.trim()       || 'sacco_db',
+    };
+  },
+
+  _setStatus(type, html) {
+    const el = document.getElementById('cfg-status');
+    el.className = {
+      info:    'text-sm rounded px-3 py-2 mb-4 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+      success: 'text-sm rounded px-3 py-2 mb-4 bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+      error:   'text-sm rounded px-3 py-2 mb-4 bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300',
+    }[type];
+    el.innerHTML = html;
+  },
+};
+
 const pages = { dashboard: Dashboard, members: Members, savings: Savings,
-                loans: Loans, calculator: Calculator, reports: Reports, activity: Activity, users: Users };
+                loans: Loans, calculator: Calculator, reports: Reports,
+                activity: Activity, users: Users, settings: Settings };
 
 // ── Pending badge ────────────────────────────────────────────
 async function updatePendingBadge() {
@@ -1053,12 +1159,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.key === 'Escape') closeModal();
   });
 
+  // If main process reports a DB connection failure, go straight to settings
+  api.onDbConnectFailed(msg => {
+    toast(`Database connection failed — check settings. ${msg}`, 'error');
+    navigate('settings');
+  });
+
   await Promise.all([updatePendingBadge(), updateOverdueAlert()]);
   await navigate('dashboard');
 });
 
 // expose to inline onclick handlers
-window.Members   = Members;
-window.Loans     = Loans;
+window.Members    = Members;
+window.Loans      = Loans;
+window.Users      = Users;
+window.Settings   = Settings;
 window.closeModal = closeModal;
-window.Users     = Users;

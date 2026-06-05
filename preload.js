@@ -46,6 +46,17 @@ contextBridge.exposeInMainWorld('api', {
   deleteUser:    (id)                 => invoke('db:deleteUser', id),
 
   // System
-  saveCSV:     (csv, name)          => invoke('dialog:saveCSV', csv, name),
-  printToPDF:  ()                   => invoke('app:printToPDF'),
+  saveCSV:    (csv, name) => invoke('dialog:saveCSV', csv, name),
+  printToPDF: ()          => invoke('app:printToPDF'),
+
+  // DB connection config
+  getConfig:   ()    => invoke('config:get'),
+  testConfig:  (cfg) => invoke('config:test', cfg),
+  applyConfig: (cfg) => invoke('config:apply', cfg),
+
+  // Main → renderer events
+  onDbConnectFailed: (cb) => {
+    const { ipcRenderer } = require('electron');
+    ipcRenderer.on('db:connect-failed', (_, msg) => cb(msg));
+  },
 });

@@ -6,21 +6,40 @@ const fs   = require('fs');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 
-const DB_NAME = process.env.DB_NAME || 'sacco_db';
+// ── Config file (stored in user's app data directory) ─────────────────────────
+const DEFAULT_DB = { host: 'localhost', user: 'root', password: '', database: 'sacco_db' };
+let CONFIG_PATH; // set after app ready
 
-const DB_CONFIG = {
-  host:     process.env.DB_HOST     || 'localhost',
-  user:     process.env.DB_USER     || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: DB_NAME,
-  waitForConnections: true,
-  connectionLimit: 10,
-};
+function loadConfig() {
+  try {
+    if (CONFIG_PATH && fs.existsSync(CONFIG_PATH)) {
+      return { ...DEFAULT_DB, ...JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) };
+    }
+  } catch {}
+  return { ...DEFAULT_DB };
+}
+
+function saveConfigFile(cfg) {
+  if (!CONFIG_PATH) return;
+  fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8');
+}
+
+// ── DB pool ───────────────────────────────────────────────────────────────────
+const DB_CONFIG = { ...DEFAULT_DB, waitForConnections: true, connectionLimit: 10 };
 
 let pool;
 function getPool() {
   if (!pool) pool = mysql.createPool(DB_CONFIG);
   return pool;
+}
+
+function applyConfig(cfg) {
+  DB_CONFIG.host     = cfg.host;
+  DB_CONFIG.user     = cfg.user;
+  DB_CONFIG.password = cfg.password;
+  DB_CONFIG.database = cfg.database;
+  if (pool) { pool.end().catch(() => {}); pool = null; }
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -33,29 +52,19 @@ async function logActivity(action, details = '') {
 
 // ── Database bootstrap (runs on every startup, all statements are idempotent) ─
 async function setupDatabase() {
-  const { host, user, password } = DB_CONFIG;
+  const { host, user, password, database } = DB_CONFIG;
   let conn;
   try {
     conn = await mysql.createConnection({ host, user, password });
   } catch (err) {
-    await dialog.showMessageBox({
-      type: 'error',
-      title: 'Cannot connect to MySQL',
-      message: 'SACCO Pro could not connect to MySQL.\n\n' +
-        `Host: ${host}  User: ${user}\n\n` +
-        'Please make sure MySQL is installed and running, then restart the app.\n\n' +
-        `Error: ${err.message}`,
-      buttons: ['Exit'],
-    });
-    app.quit();
-    return false;
+    return { success: false, error: `Cannot connect to MySQL at ${host} as '${user}': ${err.message}` };
   }
 
   try {
     await conn.query(
-      `CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+      `CREATE DATABASE IF NOT EXISTS \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
     );
-    await conn.query(`USE \`${DB_NAME}\``);
+    await conn.query(`USE \`${database}\``);
 
     const tables = [
       `CREATE TABLE IF NOT EXISTS members (
@@ -131,10 +140,12 @@ async function setupDatabase() {
         ['admin', hash, 'admin']
       );
     }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
   } finally {
     await conn.end();
   }
-  return true;
 }
 
 // ── Window ───────────────────────────────────────────────────────────────────
@@ -151,14 +162,45 @@ function createWindow() {
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.once('ready-to-show', () => win.show());
+  // Run DB setup after the page loads; on failure notify renderer to show settings
+  win.webContents.once('did-finish-load', async () => {
+    const result = await setupDatabase();
+    if (!result.success) {
+      win.webContents.send('db:connect-failed', result.error);
+    }
+  });
 }
 
-app.whenReady().then(async () => {
-  const ok = await setupDatabase();
-  if (ok) createWindow();
+app.whenReady().then(() => {
+  CONFIG_PATH = path.join(app.getPath('userData'), 'sacco-config.json');
+  applyConfig(loadConfig());
+  createWindow();
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+
+// ── IPC: Config ───────────────────────────────────────────────────────────────
+ipcMain.handle('config:get', () => {
+  const { host, user, password, database } = DB_CONFIG;
+  return { host, user, password, database };
+});
+
+ipcMain.handle('config:test', async (_, cfg) => {
+  try {
+    const conn = await mysql.createConnection({ host: cfg.host, user: cfg.user, password: cfg.password });
+    await conn.ping();
+    await conn.end();
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('config:apply', async (_, cfg) => {
+  saveConfigFile(cfg);
+  applyConfig(cfg);
+  return await setupDatabase();
+});
 
 // ── IPC: Members ─────────────────────────────────────────────────────────────
 ipcMain.handle('db:getMembers', async (_, search = '') => {
