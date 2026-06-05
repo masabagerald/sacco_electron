@@ -6,11 +6,13 @@ const fs   = require('fs');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 
+const DB_NAME = process.env.DB_NAME || 'sacco_db';
+
 const DB_CONFIG = {
   host:     process.env.DB_HOST     || 'localhost',
   user:     process.env.DB_USER     || 'root',
   password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME     || 'sacco_db',
+  database: DB_NAME,
   waitForConnections: true,
   connectionLimit: 10,
 };
@@ -29,6 +31,112 @@ async function logActivity(action, details = '') {
   );
 }
 
+// ── Database bootstrap (runs on every startup, all statements are idempotent) ─
+async function setupDatabase() {
+  const { host, user, password } = DB_CONFIG;
+  let conn;
+  try {
+    conn = await mysql.createConnection({ host, user, password });
+  } catch (err) {
+    await dialog.showMessageBox({
+      type: 'error',
+      title: 'Cannot connect to MySQL',
+      message: 'SACCO Pro could not connect to MySQL.\n\n' +
+        `Host: ${host}  User: ${user}\n\n` +
+        'Please make sure MySQL is installed and running, then restart the app.\n\n' +
+        `Error: ${err.message}`,
+      buttons: ['Exit'],
+    });
+    app.quit();
+    return false;
+  }
+
+  try {
+    await conn.query(
+      `CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+    );
+    await conn.query(`USE \`${DB_NAME}\``);
+
+    const tables = [
+      `CREATE TABLE IF NOT EXISTS members (
+        id          INT           PRIMARY KEY AUTO_INCREMENT,
+        name        VARCHAR(255)  NOT NULL,
+        phone       VARCHAR(50),
+        email       VARCHAR(255),
+        address     TEXT,
+        national_id VARCHAR(100)  UNIQUE,
+        date_joined DATE          NOT NULL,
+        status      VARCHAR(20)   NOT NULL DEFAULT 'active'
+      ) ENGINE=InnoDB`,
+
+      `CREATE TABLE IF NOT EXISTS savings (
+        id               INT           PRIMARY KEY AUTO_INCREMENT,
+        member_id        INT           NOT NULL,
+        amount           DECIMAL(15,2) NOT NULL,
+        transaction_type VARCHAR(20)   NOT NULL,
+        date             DATE          NOT NULL,
+        notes            TEXT,
+        FOREIGN KEY (member_id) REFERENCES members(id)
+      ) ENGINE=InnoDB`,
+
+      `CREATE TABLE IF NOT EXISTS loans (
+        id               INT           PRIMARY KEY AUTO_INCREMENT,
+        member_id        INT           NOT NULL,
+        amount_requested DECIMAL(15,2) NOT NULL,
+        amount_approved  DECIMAL(15,2),
+        interest_rate    DECIMAL(5,2)  NOT NULL DEFAULT 12.0,
+        duration_months  INT           NOT NULL DEFAULT 12,
+        purpose          TEXT,
+        status           VARCHAR(20)   NOT NULL DEFAULT 'pending',
+        date_applied     DATE          NOT NULL,
+        date_approved    DATE,
+        FOREIGN KEY (member_id) REFERENCES members(id)
+      ) ENGINE=InnoDB`,
+
+      `CREATE TABLE IF NOT EXISTS loan_repayments (
+        id          INT           PRIMARY KEY AUTO_INCREMENT,
+        loan_id     INT           NOT NULL,
+        amount_paid DECIMAL(15,2) NOT NULL,
+        date_paid   DATE          NOT NULL,
+        notes       TEXT,
+        FOREIGN KEY (loan_id) REFERENCES loans(id)
+      ) ENGINE=InnoDB`,
+
+      `CREATE TABLE IF NOT EXISTS activity_log (
+        id         INT          PRIMARY KEY AUTO_INCREMENT,
+        action     VARCHAR(100) NOT NULL,
+        details    TEXT,
+        created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB`,
+
+      `CREATE TABLE IF NOT EXISTS users (
+        id            INT          PRIMARY KEY AUTO_INCREMENT,
+        username      VARCHAR(100) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        role          VARCHAR(50)  NOT NULL DEFAULT 'user',
+        created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB`,
+    ];
+
+    for (const sql of tables) await conn.execute(sql);
+
+    // Create default admin account if it doesn't exist yet
+    const [[{ cnt }]] = await conn.execute(
+      'SELECT COUNT(*) AS cnt FROM users WHERE username = ?', ['admin']
+    );
+    if (cnt === 0) {
+      const hash = bcrypt.hashSync('admin123', 10);
+      await conn.execute(
+        'INSERT IGNORE INTO users (username, password_hash, role) VALUES (?, ?, ?)',
+        ['admin', hash, 'admin']
+      );
+    }
+  } finally {
+    await conn.end();
+  }
+  return true;
+}
+
 // ── Window ───────────────────────────────────────────────────────────────────
 let win;
 function createWindow() {
@@ -45,7 +153,10 @@ function createWindow() {
   win.once('ready-to-show', () => win.show());
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  const ok = await setupDatabase();
+  if (ok) createWindow();
+});
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 
