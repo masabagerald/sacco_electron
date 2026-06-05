@@ -113,7 +113,8 @@ const Dashboard = {
     <div class="section-card">
       <div class="page-header"><h2>Recent Transactions</h2></div>
       <div id="recent-txns"></div>
-    </div>`;
+    </div>
+    `;
   },
   _card(key, icon, bg, color, label) {
     return `<div class="stat-card">
@@ -294,6 +295,80 @@ const Members = {
       toast('Member deleted.', 'success');
       await this.load();
     } catch (err) { toast(err.message, 'error'); }
+  },
+};
+
+// ── Users Page (Admin) ─────────────────────────────────────────
+const Users = {
+  async render() {
+    return `
+    <div class="section-card">
+      <div class="page-header">
+        <h2>Users</h2>
+        <div class="flex gap-2">
+          <button class="btn btn-primary" id="btn-add-user"><i class="fa-solid fa-plus"></i> Add User</button>
+        </div>
+      </div>
+      <div id="users-table"></div>
+    </div>`;
+  },
+  async mount() {
+    await this.load();
+    document.getElementById('btn-add-user').onclick = () => this.openDialog();
+  },
+  async load() {
+    const users = await api.getUsers();
+    document.getElementById('users-table').innerHTML = tableHTML([
+      { label: 'ID', key: 'id' },
+      { label: 'Username', key: 'username' },
+      { label: 'Role', key: 'role' },
+      { label: 'Created', key: 'created_at', render: r => new Date(r.created_at).toLocaleString() },
+      { label: 'Actions', key: '_', render: r =>
+        `<button class="btn btn-sm btn-ghost" onclick="Users.openDialog(${r.id})"><i class="fa-solid fa-pen"></i></button>
+         <button class="btn btn-sm btn-danger" onclick="Users.delete(${r.id},'${r.username.replace(/'/g,"\\'")}')"><i class="fa-solid fa-trash"></i></button>` },
+    ], users, 'No users found.');
+  },
+  async openDialog(id = null) {
+    const u = id ? await api.getUser(id) : null;
+    const v = f => u ? (u[f] || '') : '';
+    openModal(id ? 'Edit User' : 'Add User', `
+      <form id="user-form">
+        <div class="form-group">
+          <label class="form-label">Username *</label>
+          <input class="form-input" name="username" value="${v('username')}" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password ${id? '(leave blank to keep)' : '*'}</label>
+          <input class="form-input" type="password" name="password">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Role</label>
+          <select class="form-select" name="role">
+            <option ${v('role')==='admin'?'selected':''}>admin</option>
+            <option ${v('role')==='user'?'selected':''}>user</option>
+          </select>
+        </div>
+        <div class="flex justify-end gap-2 mt-4">
+          <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>`);
+    document.getElementById('user-form').onsubmit = async e => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target));
+      try {
+        if (id) await api.updateUser(id, data);
+        else     await api.addUser(data);
+        closeModal(); toast(id ? 'User updated.' : 'User added.', 'success');
+        await this.load();
+      } catch (err) { toast(err.message, 'error'); }
+    };
+  },
+  async delete(id, username) {
+    if (!confirm(`Delete user "${username}"?`)) return;
+    await api.deleteUser(id);
+    toast('User deleted.', 'success');
+    await this.load();
   },
 };
 
@@ -879,7 +954,7 @@ const Activity = {
 };
 
 const pages = { dashboard: Dashboard, members: Members, savings: Savings,
-                loans: Loans, calculator: Calculator, reports: Reports, activity: Activity };
+                loans: Loans, calculator: Calculator, reports: Reports, activity: Activity, users: Users };
 
 // ── Pending badge ────────────────────────────────────────────
 async function updatePendingBadge() {
@@ -920,6 +995,15 @@ async function updateOverdueAlert() {
   }
 }
 
+// ── Session / Login helpers ───────────────────────────────────
+function getCurrentUser() { try { return JSON.parse(sessionStorage.getItem('user')); } catch { return null; } }
+function setCurrentUser(u) { sessionStorage.setItem('user', JSON.stringify(u)); }
+function clearCurrentUser() { sessionStorage.removeItem('user'); }
+function showLoginOverlay() { const el = document.getElementById('login-overlay'); if (el) el.style.display = 'flex'; }
+function hideLoginOverlay() { const el = document.getElementById('login-overlay'); if (el) el.style.display = 'none'; }
+async function doLogin(username, password) { const user = await api.login(username, password); setCurrentUser(user); return user; }
+function updateTopbarUser() { const u = getCurrentUser(); const el = document.getElementById('current-user'); if (!el) return; el.textContent = u ? `${u.username} (${u.role})` : ''; }
+
 // ── Init ─────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   initTheme();
@@ -933,6 +1017,32 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('modal-overlay').onclick = e => {
     if (e.target === document.getElementById('modal-overlay')) closeModal();
   };
+
+  // Login form wiring
+  const loginForm = document.getElementById('login-form');
+  if (loginForm) {
+    loginForm.onsubmit = async e => {
+      e.preventDefault();
+      const user = document.getElementById('login-username').value.trim();
+      const pass = document.getElementById('login-password').value;
+      try {
+        const u = await doLogin(user, pass);
+        console.log('Login success', u);
+        hideLoginOverlay();
+        updateTopbarUser();
+        toast('Signed in.', 'success');
+        await navigate('dashboard');
+      } catch (err) { toast(err.message || 'Login failed', 'error'); }
+    };
+  }
+
+  // Logout
+  const logoutBtn = document.getElementById('btn-logout');
+  if (logoutBtn) logoutBtn.onclick = () => { clearCurrentUser(); updateTopbarUser(); showLoginOverlay(); toast('Signed out.', 'info'); };
+
+  // show login if not signed in
+  const cur = getCurrentUser();
+  if (!cur) showLoginOverlay(); else updateTopbarUser();
 
   document.querySelectorAll('.nav-link').forEach(el => {
     el.onclick = () => navigate(el.dataset.page);
@@ -951,3 +1061,4 @@ document.addEventListener('DOMContentLoaded', async () => {
 window.Members   = Members;
 window.Loans     = Loans;
 window.closeModal = closeModal;
+window.Users     = Users;

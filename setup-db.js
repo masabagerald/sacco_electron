@@ -54,6 +54,14 @@ const TABLES = [
     details   TEXT,
     created_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP
   ) ENGINE=InnoDB`,
+
+  `CREATE TABLE IF NOT EXISTS users (
+    id            INT           PRIMARY KEY AUTO_INCREMENT,
+    username      VARCHAR(100)  NOT NULL UNIQUE,
+    password_hash VARCHAR(255)  NOT NULL,
+    role          VARCHAR(50)   NOT NULL DEFAULT 'user',
+    created_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB`,
 ];
 
 async function main() {
@@ -73,7 +81,27 @@ async function main() {
   const names = ['members', 'savings', 'loans', 'loan_repayments', 'activity_log'];
   for (let i = 0; i < TABLES.length; i++) {
     await conn.execute(TABLES[i]);
-    console.log(`  [OK] ${names[i]}`);
+    // attempt to print a name if available
+    console.log(`  [OK] table ${i + 1}`);
+  }
+
+  // create default admin if not exists
+  try {
+    const bcrypt = require('bcryptjs');
+    const adminUser = 'admin';
+    const adminPass = 'admin123';
+    const [[exists]] = await conn.execute('SELECT COUNT(*) AS c FROM information_schema.tables WHERE table_schema=? AND table_name=?', [DB_NAME, 'users']);
+    // Ensure users table exists before inserting
+    const [[ucheck]] = await conn.execute('SELECT COUNT(*) AS cnt FROM users WHERE username=?', [adminUser]).catch(()=>[[]]);
+    if (!ucheck || ucheck.cnt === 0) {
+      const hash = bcrypt.hashSync(adminPass, 10);
+      await conn.execute('INSERT IGNORE INTO users (username,password_hash,role) VALUES (?,?,?)', [adminUser, hash, 'admin']);
+      console.log('  [OK] default admin created (username: admin, password: admin123)');
+    } else {
+      console.log('  [OK] admin user already exists');
+    }
+  } catch (e) {
+    console.warn('Could not create default admin:', e.message);
   }
 
   await conn.end();

@@ -37,6 +37,14 @@ contextBridge.exposeInMainWorld('api', {
   // Activity
   getActivityLog: (limit)           => invoke('db:getActivityLog', limit),
 
+  // Users & Auth
+  login:         (username, password) => invoke('db:authLogin', username, password),
+  getUsers:      ()                   => invoke('db:getUsers'),
+  getUser:       (id)                 => invoke('db:getUser', id),
+  addUser:       (data)               => invoke('db:addUser', data),
+  updateUser:    (id, data)           => invoke('db:updateUser', id, data),
+  deleteUser:    (id)                 => invoke('db:deleteUser', id),
+
   // System
   saveCSV:     (csv, name)          => invoke('dialog:saveCSV', csv, name),
   printToPDF:  ()                   => invoke('app:printToPDF'),

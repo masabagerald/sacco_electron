@@ -4,6 +4,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs   = require('fs');
 const mysql = require('mysql2/promise');
+const bcrypt = require('bcryptjs');
 
 const DB_CONFIG = {
   host:     process.env.DB_HOST     || 'localhost',
@@ -263,6 +264,58 @@ ipcMain.handle('db:getPendingCount', async () => {
     "SELECT COUNT(*) AS cnt FROM loans WHERE status='pending'"
   );
   return Number(row.cnt);
+});
+
+// ── IPC: Users & Auth ─────────────────────────────────────────────────────
+ipcMain.handle('db:authLogin', async (_, username, password) => {
+  console.log('Auth attempt for', username);
+  const [[user]] = await getPool().execute('SELECT id,username,password_hash,role FROM users WHERE username=?', [username]);
+  if (!user) {
+    console.log('Auth failed: user not found', username);
+    throw new Error('Invalid username or password');
+  }
+  const ok = await bcrypt.compare(password, user.password_hash);
+  if (!ok) {
+    console.log('Auth failed: bad password for', username);
+    throw new Error('Invalid username or password');
+  }
+  console.log('Auth success for', username);
+  // don't return password_hash
+  return { id: user.id, username: user.username, role: user.role };
+});
+
+ipcMain.handle('db:getUsers', async () => {
+  const [rows] = await getPool().execute('SELECT id,username,role,created_at FROM users ORDER BY username');
+  return rows;
+});
+
+ipcMain.handle('db:getUser', async (_, id) => {
+  const [[row]] = await getPool().execute('SELECT id,username,role,created_at FROM users WHERE id=?', [id]);
+  return row;
+});
+
+ipcMain.handle('db:addUser', async (_, data) => {
+  const { username, password, role = 'user' } = data;
+  const hash = bcrypt.hashSync(password, 10);
+  await getPool().execute('INSERT INTO users (username,password_hash,role) VALUES (?,?,?)', [username, hash, role]);
+  await logActivity('ADD_USER', `Added user: ${username}`);
+});
+
+ipcMain.handle('db:updateUser', async (_, id, data) => {
+  const { username, password, role } = data;
+  if (password) {
+    const hash = bcrypt.hashSync(password, 10);
+    await getPool().execute('UPDATE users SET username=?, password_hash=?, role=? WHERE id=?', [username, hash, role, id]);
+  } else {
+    await getPool().execute('UPDATE users SET username=?, role=? WHERE id=?', [username, role, id]);
+  }
+  await logActivity('UPDATE_USER', `Updated user ID ${id}: ${username}`);
+});
+
+ipcMain.handle('db:deleteUser', async (_, id) => {
+  const [[u]] = await getPool().execute('SELECT username FROM users WHERE id=?', [id]);
+  await getPool().execute('DELETE FROM users WHERE id=?', [id]);
+  await logActivity('DELETE_USER', `Deleted user: ${u?.username}`);
 });
 
 // ── IPC: Dashboard ────────────────────────────────────────────────────────────
