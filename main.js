@@ -290,13 +290,14 @@ ipcMain.handle('db:getSavingsSummary', async () => {
 });
 
 ipcMain.handle('db:getSavingsTrend', async (_, months = 6) => {
-  const [rows] = await getPool().execute(
+  const n = parseInt(months, 10) || 6;
+  const [rows] = await getPool().query(
     `SELECT DATE_FORMAT(date,'%Y-%m') AS month,
        SUM(CASE WHEN transaction_type='deposit' THEN amount ELSE 0 END) AS deposits,
        SUM(CASE WHEN transaction_type='withdrawal' THEN amount ELSE 0 END) AS withdrawals
      FROM savings
-     WHERE date >= DATE_SUB(CURDATE(), INTERVAL ? MONTH)
-     GROUP BY month ORDER BY month`, [months]
+     WHERE date >= DATE_SUB(CURDATE(), INTERVAL ${n} MONTH)
+     GROUP BY month ORDER BY month`
   );
   return rows;
 });
@@ -492,8 +493,9 @@ ipcMain.handle('db:getDashboardStats', async () => {
 
 // ── IPC: Activity ─────────────────────────────────────────────────────────────
 ipcMain.handle('db:getActivityLog', async (_, limit = 100) => {
-  const [rows] = await getPool().execute(
-    'SELECT * FROM activity_log ORDER BY created_at DESC LIMIT ?', [limit]
+  const n = parseInt(limit, 10) || 100;
+  const [rows] = await getPool().query(
+    `SELECT * FROM activity_log ORDER BY created_at DESC LIMIT ${n}`
   );
   return rows;
 });
